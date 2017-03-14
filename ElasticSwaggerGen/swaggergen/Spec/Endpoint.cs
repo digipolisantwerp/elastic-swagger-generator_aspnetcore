@@ -12,5 +12,11 @@ namespace ElasticSwaggerGen.Spec
         public EndpointUrl Url { get; set; } = new EndpointUrl();
         public List<EndpointParameter> Params { get; set; } = new List<EndpointParameter>();
         public EndpointBody Body { get; set; } = new EndpointBody();
+
+        public override string ToString()
+        {
+            var msg = $"Endpoint url : {Url?.Path ?? "null"}";
+            return msg;
+        }
     }
 }

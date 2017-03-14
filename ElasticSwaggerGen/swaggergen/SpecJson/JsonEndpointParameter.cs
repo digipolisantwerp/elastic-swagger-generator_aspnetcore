@@ -1,14 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
-namespace ElasticSwaggerGen.Spec
+namespace ElasticSwaggerGen.SpecJson
 {
-    public class EndpointParameter
+    public class JsonEndpointParameter
     {
         public string Name { get; set; }
         public string Type { get; set; }
         public string Description { get; set; }
-        public List<string> Default { get; set; } = new List<string>();
+        [JsonExtensionData]
+        public Dictionary<string, JToken> Default { get; set; } = new Dictionary<string, JToken>();
         public List<string> Options { get; set; } = new List<string>();
     }
 }

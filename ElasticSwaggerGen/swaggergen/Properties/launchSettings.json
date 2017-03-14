@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "swaggergen": {
+      "commandName": "Project",
+      "commandLineArgs": "create --inpath D:\\github\\elastic\\elasticsearch\\rest-api-spec\\src\\main\\resources\\rest-api-spec\\api --outpath C:\\temp"
+    }
+  }
+}
