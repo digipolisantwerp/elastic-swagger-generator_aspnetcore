@@ -40,7 +40,7 @@ namespace ElasticSwaggerGen.Commands
 
                 command.Out.WriteLine("Converting Elastic JSON spec files from {0} to {1}.", inpath, outpath);
 
-                var converter = new SpecConverter(command, new SpecParser());
+                var converter = new SpecConverter(command, new SpecParser(), new SwaggerWriter());
                 return converter.Convert(inpath, outpath);
             });
 

@@ -13,17 +13,28 @@ namespace ElasticSwaggerGen.Conversion
 {
     class SpecConverter
     {
-        public SpecConverter(CommandLineApplication command, SpecParser parser)
+        public SpecConverter(CommandLineApplication command, SpecParser parser, SwaggerWriter writer)
         {
             _command = command;
             _parser = parser;
+            _writer = writer;
         }
 
         private readonly CommandLineApplication _command;
         private readonly SpecParser _parser;
+        private readonly SwaggerWriter _writer;
+
+        private readonly List<string> _excludeFiles = new List<string>();
+
+        private void InitExcludes()
+        {
+            _excludeFiles.Add("cluster.put_settings.json");
+        }
 
         public int Convert(string inPath, string outPath)
         {
+            InitExcludes();
+
             var inputFiles = Directory.EnumerateFiles(inPath, "*.json").Where(f => !f.EndsWith("_common.json"));
             if ( inputFiles.Count() == 0 )
             {
@@ -31,13 +42,23 @@ namespace ElasticSwaggerGen.Conversion
                 return 1;
             }
 
+            var endpoints = new List<Endpoint>();
+
             foreach ( var specFile in inputFiles )
             {
+                if ( _excludeFiles.Contains(Path.GetFileName(specFile)))
+                {
+                    _command.Out.WriteLine("Skipping {0}...", specFile);
+                    continue;
+                }
+
                 _command.Out.WriteLine("Converting {0}...", specFile);
                 var endpoint = ParseFile(specFile);
-                // TODO (SVB): convert endpoint to swagger
+                endpoints.Add(endpoint);
                 _command.Out.WriteLine(endpoint.ToString());
             }
+
+            _writer.Write(endpoints, outPath);
 
             return 0;
         }
