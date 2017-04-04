@@ -1,33 +1,52 @@
 ﻿using System;
 using System.Collections.Generic;
-using ElasticSwaggerGen.Spec;
-using NSwag;
+using System.IO;
 using System.Linq;
+using ElasticSwaggerGen.Options;
+using ElasticSwaggerGen.Spec;
 using ElasticSwaggerGen.Swagger;
+using Microsoft.Extensions.Options;
+using NSwag;
 
 namespace ElasticSwaggerGen.Conversion
 {
-    public class SwaggerWriter
+    public class SwaggerWriter : ISwaggerWriter
     {
+        public SwaggerWriter(IOptions<SwaggerOptions> options)
+        {
+            _options = options.Value;
+        }
+
+        private readonly SwaggerOptions _options;
+
         public void Write(IEnumerable<Endpoint> endpoints, string outPath)
         {
             var document = new SwaggerDocument();
 
             document.Info = GenerateInfo();
-            document.BasePath = "/logging-app1";
+            document.BasePath = _options.BasePath;
 
-            foreach ( var endpoint in endpoints )
+            foreach (var endpoint in endpoints)
             {
-                var pathAlreadyExists = document.Paths.Keys.Contains(endpoint.Url.Path);
-                var operations = pathAlreadyExists ? document.Paths[endpoint.Url.Path] : new SwaggerOperations();
-                PopulateOperations(operations, endpoint);
-                if ( !pathAlreadyExists ) document.Paths.Add(endpoint.Url.Path, operations);
+                var paths = endpoint.Url.Paths.Count > 0 ? endpoint.Url.Paths : new List<string>() { endpoint.Url.Path };
+                foreach ( var path in paths )
+                {
+                    if ( _options.ExcludePaths.Contains(path) ) continue;
+                    var pathAlreadyExists = document.Paths.Keys.Contains(path);
+                    var operations = pathAlreadyExists ? document.Paths[path] : new SwaggerOperations();
+                    PopulateOperationsByPath(operations, path, endpoint);
+                    if ( !pathAlreadyExists ) document.Paths.Add(path, operations);
+                }
             }
 
             document.GenerateOperationIds();
-            
+
             var json = document.ToJson();
-            var s = 1;
+
+            // TODO (SVB): create outpath if not exists
+            //if (!Directory.Exists(outPath)) throw new DirectoryNotFoundException($"Output path {outPath} does not exist.");
+
+            File.WriteAllText(Path.Combine(outPath, $"elastic-swagger-{DateTime.Now.ToString("yyyyMMddHHmmss")}.json"), json);
         }
 
         private SwaggerInfo GenerateInfo()
@@ -36,31 +55,31 @@ namespace ElasticSwaggerGen.Conversion
             {
                 Contact = new SwaggerContact()
                 {
-                    Email = "da_apie_team@digipolis.be",
-                    Name = "ACPaaS",
-                    Url = "?"
+                    Email = _options.ContactEmail,
+                    Name = _options.ContactName,
+                    Url = _options.ContactUrl
                 },
-                Description = "ElasticSearch API",
+                Description = _options.ApiDescription,
                 License = new SwaggerLicense()
                 {
                     Name = "?",
                     Url = "?"
                 },
                 TermsOfService = "?",
-                Title = "ElasticSearch",
-                Version = "5"
+                Title = _options.ApiTitle,
+                Version = _options.ApiVersion
             };
 
             return info;
         }
 
-        private SwaggerOperations PopulateOperations(SwaggerOperations operations, Endpoint endpoint)
+        private SwaggerOperations PopulateOperationsByPath(SwaggerOperations operations, string path, Endpoint endpoint)
         {
-            foreach (var method in endpoint.Methods)
+            foreach ( var method in endpoint.Methods )
             {
                 var operation = new SwaggerOperation()
                 {
-                    Description = endpoint.Description,
+                    Description = $"Source: {endpoint.FileName}",
                     Produces = new List<string>() { "application/json" },
                     // TODO (SVB): nog aanvullen ?                        
                 };
@@ -106,10 +125,10 @@ namespace ElasticSwaggerGen.Conversion
                     if ( param.Type != NJsonSchema.JsonObjectType.Null ) operation.Parameters.Add(param);
                 }
 
-                foreach ( var urlPart in endpoint.Url.Parts )
+                foreach (var urlPart in endpoint.Url.Parts)
                 {
                     var partType = ParseJsonObjectType(urlPart.Type);
-                    if ( partType == NJsonSchema.JsonObjectType.Array ) partType = NJsonSchema.JsonObjectType.String;
+                    if (partType == NJsonSchema.JsonObjectType.Array) partType = NJsonSchema.JsonObjectType.String;
 
                     var param = new SwaggerParameter()
                     {
@@ -117,7 +136,7 @@ namespace ElasticSwaggerGen.Conversion
                         Type = partType,
                         Name = urlPart.Name,
                         Kind = SwaggerParameterKind.Path,
-                        IsRequired = urlPart.Required
+                        IsRequired = true
                         // TODO (SVB): nog aanvullen ?
                     };
 
@@ -126,7 +145,7 @@ namespace ElasticSwaggerGen.Conversion
                         param.Item = new NJsonSchema.JsonSchema4() { Type = NJsonSchema.JsonObjectType.String };
                     }
 
-                    if ( param.Type != NJsonSchema.JsonObjectType.Null ) operation.Parameters.Add(param);
+                    if ( param.Type != NJsonSchema.JsonObjectType.Null && path.Contains($"{{{param.Name}}}") ) operation.Parameters.Add(param);
                 }
 
                 var operationMethod = (SwaggerOperationMethod)Enum.Parse(typeof(SwaggerOperationMethod), method, true);
@@ -140,15 +159,15 @@ namespace ElasticSwaggerGen.Conversion
 
         private NJsonSchema.JsonObjectType ParseJsonObjectType(string type)
         {
-            if ( String.IsNullOrWhiteSpace(type) )
+            if (String.IsNullOrWhiteSpace(type))
                 return NJsonSchema.JsonObjectType.Null;
-            if ( type == "null" )
+            if (type == "null")
                 return NJsonSchema.JsonObjectType.Null;
-            if ( type == "enum" )
+            if (type == "enum")
                 return NJsonSchema.JsonObjectType.String;
-            if ( type == "time" )
+            if (type == "time")
                 return NJsonSchema.JsonObjectType.String;
-            if ( type == "list" )
+            if (type == "list")
                 return NJsonSchema.JsonObjectType.Array;
             else
                 return (NJsonSchema.JsonObjectType)Enum.Parse(typeof(NJsonSchema.JsonObjectType), type, true);
@@ -159,20 +178,20 @@ namespace ElasticSwaggerGen.Conversion
             var value = defaults.FirstOrDefault();
             if ( value == null ) return null;
 
-            switch ( objectType )
+            switch (objectType)
             {
                 case NJsonSchema.JsonObjectType.Array:
                     // ?
                     break;
                 case NJsonSchema.JsonObjectType.Boolean:
                     var defaultBoolValue = false;
-                    if ( !Boolean.TryParse(value, out defaultBoolValue) )
+                    if (!Boolean.TryParse(value, out defaultBoolValue))
                         return false;
                     else
                         return defaultBoolValue;
                 case NJsonSchema.JsonObjectType.Integer:
                     var defaultIntValue = 0;
-                    if ( Int32.TryParse(value.ToString(), out defaultIntValue) )
+                    if (Int32.TryParse(value.ToString(), out defaultIntValue))
                         return null;
                     else
                         return defaultIntValue;
@@ -180,7 +199,7 @@ namespace ElasticSwaggerGen.Conversion
                     return null;
                 case NJsonSchema.JsonObjectType.Number:
                     var doubleDefaultValue = 0.00;
-                    if ( !Double.TryParse(value, out doubleDefaultValue) )
+                    if (!Double.TryParse(value, out doubleDefaultValue))
                         return null;
                     else
                         return doubleDefaultValue;

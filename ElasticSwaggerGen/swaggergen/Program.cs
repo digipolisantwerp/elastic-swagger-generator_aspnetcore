@@ -1,6 +1,12 @@
 ﻿using System;
-using Microsoft.Extensions.CommandLineUtils;
+using System.IO;
 using ElasticSwaggerGen.Commands;
+using ElasticSwaggerGen.Options;
+using Microsoft.Extensions.CommandLineUtils;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 
 namespace ElasticSwaggerGen
 {
@@ -8,23 +14,38 @@ namespace ElasticSwaggerGen
     {
         static void Main(string[] args)
         {
-            var app = new CommandLineApplication();
-            app.Name = "swaggergen";
-            app.HelpOption("-?|-h|--help");
+            var config = new ConfigurationBuilder()
+                                .SetBasePath(Directory.GetCurrentDirectory())
+                                .AddJsonFile("_config/appsettings.json")
+                                .Build();
 
-            app.Command("create", CommandProvider.Create);
+            var serviceProvider = new ServiceCollection()
+                                        .AddLogging()
+                                        .AddOptions()
+                                        .AddSingleton<CommandLineApplication, SwaggerGenApplication>()
+                                        .AddBusinessServices()
+                                        .Configure<ParseOptions>(config.GetSection("parseOptions"))
+                                        .Configure<SwaggerOptions>(config.GetSection("swaggerOptions"))
+                                        .BuildServiceProvider();
 
-            app.OnExecute(() =>
-            {
-                app.ShowHelp();
-                return 0;
-            });
+            ConfigureLogging(serviceProvider, config);
 
+            var app = serviceProvider.GetService<CommandLineApplication>();
             app.Execute(args);
             
             return;
         }
+
+        static void ConfigureLogging(IServiceProvider serviceProvider, IConfiguration config)
+        {
+            var serilogConfig = config.GetSection("serilog");
+            Log.Logger = new LoggerConfiguration()
+                            .ReadFrom.ConfigurationSection(serilogConfig)
+                            .CreateLogger();
+
+            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            loggerFactory.AddSerilog();
+            loggerFactory.AddDebug();
+        }
     }
 }
-
-// TODO (SVB): what about _common.json

@@ -9,21 +9,26 @@ using Newtonsoft.Json.Linq;
 
 namespace ElasticSwaggerGen.Conversion
 {
-    class SpecParser
+    public class SpecParser : ISpecParser
     {
-        public Endpoint ParseFile(string specFile)
+        public Endpoint ParseFile(string specFile, bool hasRoot)
         {
             var jsonText = File.ReadAllText(specFile);
 
             var settings = new JsonSerializerSettings();
 
-            var epf = JsonConvert.DeserializeObject<JsonEndpointFile>(jsonText);
-            var epfToken = epf.Properties.First().Value;
-            var ep = epfToken.ToObject<JsonEndpoint>();
+            JsonEndpoint ep = null;
+            if (hasRoot)
+            {
+                var epf = JsonConvert.DeserializeObject<JsonEndpointFile>(jsonText);
+                var epfToken = epf.Properties.First().Value;
+                ep = epfToken.ToObject<JsonEndpoint>();
+            }
+            else
+                ep = JsonConvert.DeserializeObject<JsonEndpoint>(jsonText);
 
             var endpoint = new Endpoint()
             {
-                Name = epfToken.Path,
                 Description = ep.Description,
                 Body = ep.Body,
                 Documentation = ep.Documentation,
@@ -48,21 +53,43 @@ namespace ElasticSwaggerGen.Conversion
                 endpointUrl.Parts.Add(endpointUrlPart);
             }
 
-            foreach (var param in jsonEndpointUrl.Params)
-            {
-                var endpointParameter = param.Value.ToObject<EndpointParameter>();
-                endpointParameter.Name = param.Key;
-                endpointUrl.Params.Add(endpointParameter);
-            }
+            PopulateParams(endpointUrl.Params, jsonEndpointUrl.Params);
         }
 
         private void PopulateParams(List<EndpointParameter> endpointParams, Dictionary<string, JToken> jsonEndpointParams)
         {
             foreach (var jsonParam in jsonEndpointParams)
             {
-                var parameter = jsonParam.Value.ToObject<EndpointParameter>();
-                parameter.Name = jsonParam.Key;
-                endpointParams.Add(parameter);
+                var jsonEndpointParam = jsonParam.Value.ToObject<JsonEndpointParameter>();
+                var endpointParam = new EndpointParameter()
+                {
+                    Name = jsonParam.Key,
+                    Description = jsonEndpointParam.Description,
+                    Options = jsonEndpointParam.Options,
+                    Type = jsonEndpointParam.Type,
+                };
+
+                if (jsonEndpointParam.Default.ContainsKey("default"))
+                {
+                    var defaultValue = jsonEndpointParam.Default["default"];
+                    if (defaultValue != null)
+                    {
+                        if (defaultValue is JArray)
+                        {
+                            var arrayValue = (JArray)defaultValue;
+                            foreach (var child in arrayValue.Children())
+                            {
+                                endpointParam.Default.Add(child.ToString());
+                            }
+                        }
+                        else
+                        {
+                            endpointParam.Default.Add(defaultValue.ToString());
+                        }
+                    }
+                }
+
+                endpointParams.Add(endpointParam);
             }
         }
     }
